@@ -359,145 +359,142 @@ export default function GeoDub() {
   };
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-purple-500/30">
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-purple-500/30 flex flex-col">
       {/* Background Gradients */}
       <div className="fixed inset-0 overflow-hidden -z-10">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full" />
         <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] bg-blue-900/20 blur-[120px] rounded-full" />
       </div>
 
-      <div className="flex min-h-screen">
-        {/* Main Content */}
-        <main className="flex-1 max-w-5xl mx-auto px-6 py-12">
-          <header className="flex items-center justify-between mb-16">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
-                <Languages className="w-6 h-6 text-white" />
-              </div>
-              <h1 className="text-2xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
-                GeoDub
-              </h1>
-            </div>
-          </header>
+      {/* Header — Logo centered */}
+      <header className="flex justify-center items-center py-5 border-b border-white/5 flex-shrink-0">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 bg-gradient-to-br from-purple-500 to-blue-600 rounded-xl flex items-center justify-center shadow-lg shadow-purple-500/20">
+            <Languages className="w-5 h-5 text-white" />
+          </div>
+          <h1 className="text-xl font-bold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-white to-gray-400">
+            GeoDub
+          </h1>
+        </div>
+      </header>
 
-          <section className="flex flex-col items-center justify-center text-center space-y-8">
+      {/* Body */}
+      <div className="flex flex-1 min-h-0">
+
+        {/* Left Panel — controls */}
+        <div className="w-72 flex-shrink-0 border-r border-white/10 p-5 flex flex-col gap-5 overflow-y-auto">
+          <div>
+            <h2 className="text-lg font-bold leading-snug mb-1">
+              გადათარგმნე იუთუბი <span className="text-purple-500">ქართულად</span>
+            </h2>
+            <p className="text-gray-500 text-xs leading-relaxed">
+              ჩააგდე ლინკი და მიიღე სინქრონული ქართული გახმოვანება AI-ს დახმარებით.
+            </p>
+          </div>
+
+          {/* Input */}
+          <div className="relative group">
+            <div className="absolute -inset-0.5 bg-gradient-to-r from-purple-600 to-blue-600 rounded-xl blur opacity-20 group-hover:opacity-40 transition duration-500" />
+            <div className="relative flex flex-col gap-2 p-2 bg-white/5 border border-white/10 rounded-xl backdrop-blur-xl">
+              <input
+                type="text"
+                placeholder="YouTube URL ჩასვი აქ..."
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+                className="bg-transparent px-3 py-2 outline-none text-sm text-white placeholder:text-gray-500 w-full"
+              />
+              <button
+                onClick={handleTranslate}
+                disabled={loading || !url}
+                className="bg-white text-black font-semibold px-4 py-2.5 rounded-lg hover:bg-gray-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              >
+                {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Youtube className="w-4 h-4" />}
+                {loading ? 'მუშავდება...' : 'გადათარგმნა'}
+              </button>
+            </div>
+          </div>
+
+          {/* Controls — visible when video loaded */}
+          {result && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="space-y-3"
+            >
+              <button
+                onClick={togglePlay}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-sm font-medium"
+              >
+                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                {isPlaying ? 'პაუზა' : 'დაკვრა'}
+              </button>
+
+              <div className="flex items-center gap-1 bg-white/10 p-1 rounded-lg">
+                <button
+                  onClick={() => setIsGeorgian(false)}
+                  className={`flex-1 py-1.5 rounded-md transition-all text-xs ${!isGeorgian ? 'bg-white text-black font-medium' : 'text-gray-400 hover:text-white'}`}
+                >
+                  Original
+                </button>
+                <button
+                  onClick={() => setIsGeorgian(true)}
+                  className={`flex-1 py-1.5 rounded-md transition-all text-xs ${isGeorgian ? 'bg-purple-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
+                >
+                  ქართული (AI)
+                </button>
+              </div>
+
+              <p className="text-xs text-gray-600 text-center">Powered by Edge TTS</p>
+            </motion.div>
+          )}
+        </div>
+
+        {/* Center — Video Player */}
+        <main className="flex-1 p-5 flex flex-col">
+          {result ? (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
-              className="space-y-4 max-w-2xl"
+              className="flex flex-col gap-3 h-full"
             >
-              <h2 className="text-4xl md:text-5xl font-extrabold tracking-tight">
-                გადათარგმნე იუთუბი <span className="text-purple-500">ქართულად</span>
-              </h2>
-              <p className="text-gray-400 text-lg">
-                ჩააგდე ლინკი და მიიღე სინქრონული ქართული გახმოვანება AI-ს დახმარებით.
-              </p>
-            </motion.div>
-
-            <motion.div
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              className="w-full max-w-3xl relative group"
-            >
-              <div className="absolute -inset-1 bg-gradient-to-r from-purple-600 to-blue-600 rounded-2xl blur opacity-25 group-hover:opacity-40 transition duration-500"></div>
-              <div className="relative flex flex-col md:flex-row gap-3 p-2 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-xl">
-                <input
-                  type="text"
-                  placeholder="YouTube URL ჩასვი აქ..."
-                  value={url}
-                  onChange={(e) => setUrl(e.target.value)}
-                  className="flex-1 bg-transparent px-6 py-4 outline-none text-lg text-white placeholder:text-gray-500 w-full"
-                />
-                <button
-                  onClick={handleTranslate}
-                  disabled={loading || !url}
-                  className="bg-white text-black font-semibold px-8 py-4 rounded-xl hover:bg-gray-200 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                >
-                  {loading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Youtube className="w-5 h-5" />}
-                  {loading ? 'მუშავდება...' : 'გადათარგმნა'}
-                </button>
+              <div className="aspect-video rounded-2xl overflow-hidden border border-white/10 bg-black shadow-2xl relative">
+                <div id="yt-player" className="absolute inset-0 w-full h-full" />
+                <audio ref={audioRef} src={result.translatedAudioUrl} preload="auto" />
               </div>
-            </motion.div>
 
-
-            {result && (
-              <motion.div
-                initial={{ opacity: 0, y: 40 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full max-w-4xl mt-12 space-y-6"
-              >
-                <div className="aspect-video rounded-3xl overflow-hidden border border-white/10 bg-black shadow-2xl relative group">
-                  <div id="yt-player" className="absolute inset-0 w-full h-full" />
-
-                  <audio
-                    ref={audioRef}
-                    src={result.translatedAudioUrl}
-                    preload="auto"
-                  />
-                </div>
-
-                {/* Audio Progress Bar */}
-                {isGeorgian && (
-                  <div className="w-full space-y-2">
-                    <div
-                      className="w-full h-3 bg-white/10 rounded-full overflow-hidden cursor-pointer group"
-                      onClick={handleProgressClick}
-                    >
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500 relative"
-                        style={{ width: audioDuration ? `${(audioProgress / audioDuration) * 100}%` : '0%' }}
-                        transition={{ duration: 0.1 }}
-                      >
-                        <div className="absolute right-0 top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </motion.div>
-                    </div>
-                    <div className="flex justify-between text-sm text-gray-400">
-                      <span>{formatTime(audioProgress)}</span>
-                      <span>{formatTime(audioDuration)}</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Play/Pause Button */}
-                <div className="flex gap-3">
-                  <button
-                    onClick={togglePlay}
-                    className="flex items-center gap-2 px-6 py-3 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all"
+              {isGeorgian && (
+                <div className="space-y-1">
+                  <div
+                    className="w-full h-2 bg-white/10 rounded-full overflow-hidden cursor-pointer group"
+                    onClick={handleProgressClick}
                   >
-                    {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                    {isPlaying ? 'პაუზა' : 'დაკვრა'}
-                  </button>
-                </div>
-
-                <div className="flex flex-wrap items-center justify-between p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-md">
-                  <div className="flex items-center gap-6">
-                    <div className="flex items-center gap-2 bg-white/10 p-1 rounded-lg">
-                      <button
-                        onClick={() => setIsGeorgian(false)}
-                        className={`px-4 py-2 rounded-md transition-all ${!isGeorgian ? 'bg-white text-black' : 'text-gray-400 hover:text-white'}`}
-                      >
-                        Original
-                      </button>
-                      <button
-                        onClick={() => setIsGeorgian(true)}
-                        className={`px-4 py-2 rounded-md transition-all ${isGeorgian ? 'bg-purple-600 text-white' : 'text-gray-400 hover:text-white'}`}
-                      >
-                        ქართული (AI)
-                      </button>
-                    </div>
+                    <motion.div
+                      className="h-full bg-gradient-to-r from-purple-500 to-blue-500 relative"
+                      style={{ width: audioDuration ? `${(audioProgress / audioDuration) * 100}%` : '0%' }}
+                      transition={{ duration: 0.1 }}
+                    >
+                      <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </motion.div>
                   </div>
-
-                  <div className="text-sm text-gray-500">
-                    Powered by Edge TTS
+                  <div className="flex justify-between text-xs text-gray-500">
+                    <span>{formatTime(audioProgress)}</span>
+                    <span>{formatTime(audioDuration)}</span>
                   </div>
                 </div>
-              </motion.div>
-            )}
-          </section>
+              )}
+            </motion.div>
+          ) : (
+            <div className="flex-1 flex items-center justify-center">
+              <div className="text-center space-y-3 opacity-20">
+                <Youtube className="w-20 h-20 mx-auto" />
+                <p className="text-gray-400 text-sm">გადათარგმნე ვიდეო სანახავად</p>
+              </div>
+            </div>
+          )}
         </main>
 
         {/* History Sidebar */}
-        <aside className="w-80 border-l border-white/10 bg-white/[0.02] p-6 overflow-y-auto">
+        <aside className="w-72 border-l border-white/10 bg-white/[0.02] p-5 overflow-y-auto">
           <div className="flex items-center gap-2 mb-6">
             <History className="w-5 h-5 text-purple-400" />
             <h2 className="text-lg font-semibold">ისტორია</h2>
@@ -583,7 +580,7 @@ export default function GeoDub() {
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 80, scale: 0.95 }}
             transition={{ type: 'spring', damping: 20 }}
-            className="fixed bottom-6 right-6 z-50 w-80"
+            className="fixed bottom-6 left-6 z-50 w-72"
           >
             <div className="bg-[#111] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
               {/* Header */}
