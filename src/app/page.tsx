@@ -32,6 +32,7 @@ export default function GeoDub() {
   const [url, setUrl] = useState('');
   const [loading, setLoading] = useState(false);
   const [result, setResult] = useState<any>(null);
+  const [pendingResult, setPendingResult] = useState<any>(null);
   const [isGeorgian, setIsGeorgian] = useState(true);
   const [isPlaying, setIsPlaying] = useState(false);
   const [progress, setProgress] = useState<ProgressState | null>(null);
@@ -207,13 +208,7 @@ export default function GeoDub() {
   const handleTranslate = async () => {
     setLoading(true);
     setProgress(null);
-    setResult(null);
-
-    // Reset player
-    if (playerRef.current) {
-      playerRef.current.destroy();
-      playerRef.current = null;
-    }
+    setPendingResult(null);
 
     try {
       const response = await fetch('/api/translate-stream', {
@@ -242,11 +237,11 @@ export default function GeoDub() {
               const data = JSON.parse(line.slice(6));
 
               if (data.stage === 'done') {
-                setResult(data);
+                setPendingResult(data);
                 setProgress(null);
+                loadHistory();
               } else if (data.stage === 'error') {
-                alert(data.error);
-                setProgress(null);
+                setProgress({ stage: 'error', message: data.error });
               } else {
                 setProgress(data);
               }
@@ -257,10 +252,22 @@ export default function GeoDub() {
         }
       }
     } catch (err) {
-      alert('დაფიქსირდა შეცდომა');
+      setProgress({ stage: 'error', message: 'დაფიქსირდა შეცდომა' });
     } finally {
       setLoading(false);
     }
+  };
+
+  const loadPendingResult = () => {
+    if (!pendingResult) return;
+    loadFromHistory({
+      videoId: pendingResult.originalVideoId,
+      audioUrl: pendingResult.translatedAudioUrl,
+      createdAt: new Date().toISOString(),
+      title: pendingResult.metadata?.title,
+      thumbnail: pendingResult.metadata?.thumbnail,
+    });
+    setPendingResult(null);
   };
 
   const togglePlay = () => {
@@ -412,56 +419,6 @@ export default function GeoDub() {
               </div>
             </motion.div>
 
-            {/* Progress Section */}
-            {loading && progress && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="w-full max-w-3xl"
-              >
-                <div className="p-6 bg-white/5 border border-white/10 rounded-2xl backdrop-blur-xl space-y-4">
-                  <div className="flex items-center justify-between">
-                    <span className="text-purple-400 font-medium">
-                      {getStageLabel(progress.stage)}
-                    </span>
-                    {progress.percent !== undefined && (
-                      <span className="text-gray-400">
-                        {progress.percent}%
-                      </span>
-                    )}
-                  </div>
-
-                  {progress.percent !== undefined && (
-                    <div className="w-full h-2 bg-white/10 rounded-full overflow-hidden">
-                      <motion.div
-                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
-                        initial={{ width: 0 }}
-                        animate={{ width: `${progress.percent}%` }}
-                        transition={{ duration: 0.3 }}
-                      />
-                    </div>
-                  )}
-
-                  {progress.current !== undefined && progress.total !== undefined && (
-                    <div className="text-sm text-gray-500">
-                      სეგმენტი {progress.current} / {progress.total}
-                    </div>
-                  )}
-
-                  {progress.text && (
-                    <div className="p-3 bg-white/5 rounded-lg border border-white/5">
-                      <p className="text-sm text-gray-300 font-mono">
-                        "{progress.text}"
-                      </p>
-                    </div>
-                  )}
-
-                  {progress.message && !progress.text && (
-                    <p className="text-gray-400">{progress.message}</p>
-                  )}
-                </div>
-              </motion.div>
-            )}
 
             {result && (
               <motion.div
@@ -617,6 +574,97 @@ export default function GeoDub() {
           )}
         </aside>
       </div>
+
+      {/* Floating Progress Panel */}
+      <AnimatePresence>
+        {(loading || pendingResult) && (
+          <motion.div
+            initial={{ opacity: 0, y: 80, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 80, scale: 0.95 }}
+            transition={{ type: 'spring', damping: 20 }}
+            className="fixed bottom-6 right-6 z-50 w-80"
+          >
+            <div className="bg-[#111] border border-white/10 rounded-2xl shadow-2xl shadow-black/50 overflow-hidden">
+              {/* Header */}
+              <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                <div className="flex items-center gap-2">
+                  {pendingResult ? (
+                    <div className="w-2 h-2 rounded-full bg-green-400" />
+                  ) : (
+                    <Loader2 className="w-4 h-4 text-purple-400 animate-spin" />
+                  )}
+                  <span className="text-sm font-medium text-white">
+                    {pendingResult ? 'თარგმანი მზადაა!' : 'თარგმნა მიმდინარეობს...'}
+                  </span>
+                </div>
+                {pendingResult && (
+                  <button
+                    onClick={() => setPendingResult(null)}
+                    className="text-gray-500 hover:text-white text-xs transition-colors"
+                  >
+                    ✕
+                  </button>
+                )}
+              </div>
+
+              {/* Progress content */}
+              {loading && progress && !pendingResult && (
+                <div className="px-4 py-3 space-y-3">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-purple-400">{getStageLabel(progress.stage)}</span>
+                    {progress.percent !== undefined && (
+                      <span className="text-gray-400">{progress.percent}%</span>
+                    )}
+                  </div>
+
+                  {progress.percent !== undefined && (
+                    <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
+                      <motion.div
+                        className="h-full bg-gradient-to-r from-purple-500 to-blue-500"
+                        animate={{ width: `${progress.percent}%` }}
+                        transition={{ duration: 0.3 }}
+                      />
+                    </div>
+                  )}
+
+                  {progress.current !== undefined && progress.total !== undefined && (
+                    <p className="text-xs text-gray-500">
+                      სეგმენტი {progress.current} / {progress.total}
+                    </p>
+                  )}
+
+                  {(progress.message || progress.text) && (
+                    <p className="text-xs text-gray-400 truncate">
+                      {progress.text ? `"${progress.text}"` : progress.message}
+                    </p>
+                  )}
+
+                  {progress.stage === 'error' && (
+                    <p className="text-xs text-red-400">{progress.message}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Done — load button */}
+              {pendingResult && (
+                <div className="px-4 py-3">
+                  <p className="text-xs text-gray-400 mb-3 truncate">
+                    {pendingResult.metadata?.title || pendingResult.originalVideoId}
+                  </p>
+                  <button
+                    onClick={loadPendingResult}
+                    className="w-full bg-purple-600 hover:bg-purple-700 text-white text-sm font-medium py-2 rounded-xl transition-all flex items-center justify-center gap-2"
+                  >
+                    <Play className="w-4 h-4" />
+                    ნახვა
+                  </button>
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
