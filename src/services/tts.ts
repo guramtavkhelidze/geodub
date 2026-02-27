@@ -41,9 +41,17 @@ export async function generateGeorgianAudio(
             segmentFiles.push(fileName);
 
             // Small delay between requests
-            await new Promise(r => setTimeout(r, 500));
+            await new Promise(r => setTimeout(r, 800));
         } catch (error: any) {
-            console.error(`Error in TTS segment ${i}:`, error.message);
+            console.error(`Error in TTS segment ${i}:`, error?.message || String(error));
+            // Retry once after a longer delay
+            await new Promise(r => setTimeout(r, 2000));
+            try {
+                await generateSpeechEdge(cleanText, fileName);
+                segmentFiles.push(fileName);
+            } catch (retryError: any) {
+                console.error(`Retry failed for segment ${i}:`, retryError?.message || String(retryError));
+            }
             continue;
         }
     }
