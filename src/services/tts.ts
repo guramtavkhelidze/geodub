@@ -3,8 +3,8 @@ import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
 
-const FFMPEG_PATH = process.env.FFMPEG_PATH || 'ffmpeg';
-const FFPROBE_PATH = process.env.FFPROBE_PATH || 'ffprobe';
+const FFMPEG_PATH = 'C:\\Users\\Guram\\OneDrive\\Desktop\\Targmna\\ffmpeg-8.0.1-essentials_build\\ffmpeg-8.0.1-essentials_build\\bin\\ffmpeg.exe';
+const FFPROBE_PATH = 'C:\\Users\\Guram\\OneDrive\\Desktop\\Targmna\\ffmpeg-8.0.1-essentials_build\\ffmpeg-8.0.1-essentials_build\\bin\\ffprobe.exe';
 
 ffmpeg.setFfmpegPath(FFMPEG_PATH);
 ffmpeg.setFfprobePath(FFPROBE_PATH);
@@ -269,7 +269,8 @@ export async function stitchAudioWithTiming(
     try {
         const result = spawnSync(FFMPEG_PATH, args, {
             stdio: 'pipe',
-            maxBuffer: 50 * 1024 * 1024
+            maxBuffer: 50 * 1024 * 1024,
+            windowsVerbatimArguments: true
         });
 
         if (result.status !== 0) {

@@ -26,10 +26,9 @@ export async function downloadYouTubeAudio(url: string, outputDir: string): Prom
   }
 
   // Use yt-dlp to download audio
-  const ffmpegLocation = process.env.FFMPEG_LOCATION;
-  const ffmpegArg = ffmpegLocation ? `--ffmpeg-location "${ffmpegLocation}"` : '';
+  const ffmpegLocation = 'C:\\Users\\Guram\\OneDrive\\Desktop\\Targmna\\ffmpeg-8.0.1-essentials_build\\ffmpeg-8.0.1-essentials_build\\bin';
   try {
-    await execPromise(`python -m yt_dlp -x --audio-format mp3 ${ffmpegArg} -o "${audioPath}" "${cleanUrl}"`);
+    await execPromise(`python -m yt_dlp -x --audio-format mp3 --ffmpeg-location "${ffmpegLocation}" -o "${audioPath}" "${cleanUrl}"`);
   } catch (error: any) {
     console.error('Error downloading audio:', error);
     throw new Error(`Failed to download YouTube audio. Details: ${error.message}`);
@@ -40,11 +39,10 @@ export async function downloadYouTubeAudio(url: string, outputDir: string): Prom
 
 export async function getVideoMetadata(url: string) {
   const cleanUrl = cleanYouTubeUrl(url);
-  const ffmpegLocation = process.env.FFMPEG_LOCATION;
-  const ffmpegArg = ffmpegLocation ? `--ffmpeg-location "${ffmpegLocation}"` : '';
+  const ffmpegLocation = 'C:\\Users\\Guram\\OneDrive\\Desktop\\Targmna\\ffmpeg-8.0.1-essentials_build\\ffmpeg-8.0.1-essentials_build\\bin';
 
   try {
-    const { stdout } = await execPromise(`python -m yt_dlp ${ffmpegArg} --dump-json "${cleanUrl}"`);
+    const { stdout } = await execPromise(`python -m yt_dlp --ffmpeg-location "${ffmpegLocation}" --dump-json "${cleanUrl}"`);
     return JSON.parse(stdout);
   } catch (error: any) {
     console.error('Error fetching metadata:', error);
@@ -65,14 +63,13 @@ export async function getYouTubeTranscript(url: string, outputDir: string): Prom
 
   const videoId = videoIdMatch[1];
   const subtitlePath = path.join(outputDir, `${videoId}_subs`);
-  const ffmpegLocation = process.env.FFMPEG_LOCATION;
-  const ffmpegArg = ffmpegLocation ? `--ffmpeg-location "${ffmpegLocation}"` : '';
+  const ffmpegLocation = 'C:\\Users\\Guram\\OneDrive\\Desktop\\Targmna\\ffmpeg-8.0.1-essentials_build\\ffmpeg-8.0.1-essentials_build\\bin';
 
   try {
     // Download auto-generated or manual subtitles in JSON3 format (has precise timestamps)
     // Try English first, then any available language
     await execPromise(
-      `python -m yt_dlp ${ffmpegArg} --write-auto-sub --write-sub --sub-lang "en.*,en" --sub-format json3 --skip-download -o "${subtitlePath}" "${cleanUrl}"`,
+      `python -m yt_dlp --ffmpeg-location "${ffmpegLocation}" --write-auto-sub --write-sub --sub-lang "en.*,en" --sub-format json3 --skip-download -o "${subtitlePath}" "${cleanUrl}"`,
       { maxBuffer: 50 * 1024 * 1024 }
     );
 
