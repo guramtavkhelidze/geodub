@@ -19,14 +19,8 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
         async start(controller) {
-            let controllerClosed = false;
             const sendProgress = (data: any) => {
-                if (controllerClosed) return;
-                try {
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
-                } catch {
-                    controllerClosed = true;
-                }
+                controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
             };
 
             try {
@@ -141,10 +135,7 @@ export async function POST(req: NextRequest) {
                 console.error('Translation error:', error);
                 sendProgress({ stage: 'error', error: error.message || 'დაფიქსირდა შეცდომა' });
             } finally {
-                if (!controllerClosed) {
-                    controllerClosed = true;
-                    controller.close();
-                }
+                controller.close();
             }
         }
     });
