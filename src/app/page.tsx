@@ -414,39 +414,6 @@ export default function GeoDub() {
             </div>
           </div>
 
-          {/* Controls — visible when video loaded */}
-          {result && (
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              className="space-y-3"
-            >
-              <button
-                onClick={togglePlay}
-                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-sm font-medium"
-              >
-                {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
-                {isPlaying ? 'პაუზა' : 'დაკვრა'}
-              </button>
-
-              <div className="flex items-center gap-1 bg-white/10 p-1 rounded-lg">
-                <button
-                  onClick={() => setIsGeorgian(false)}
-                  className={`flex-1 py-1.5 rounded-md transition-all text-xs ${!isGeorgian ? 'bg-white text-black font-medium' : 'text-gray-400 hover:text-white'}`}
-                >
-                  Original
-                </button>
-                <button
-                  onClick={() => setIsGeorgian(true)}
-                  className={`flex-1 py-1.5 rounded-md transition-all text-xs ${isGeorgian ? 'bg-purple-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
-                >
-                  ქართული (AI)
-                </button>
-              </div>
-
-              <p className="text-xs text-gray-600 text-center">Powered by Edge TTS</p>
-            </motion.div>
-          )}
         </div>
 
         {/* Center — Video Player */}
@@ -482,6 +449,34 @@ export default function GeoDub() {
                   </div>
                 </div>
               )}
+
+              {/* Controls below video */}
+              <div className="flex items-center justify-between">
+                <button
+                  onClick={togglePlay}
+                  className="flex items-center gap-2 px-5 py-2.5 bg-purple-600 hover:bg-purple-700 rounded-xl transition-all text-sm font-medium"
+                >
+                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4" />}
+                  {isPlaying ? 'პაუზა' : 'დაკვრა'}
+                </button>
+
+                <div className="flex items-center gap-1 bg-white/10 p-1 rounded-lg">
+                  <button
+                    onClick={() => setIsGeorgian(false)}
+                    className={`px-4 py-1.5 rounded-md transition-all text-xs ${!isGeorgian ? 'bg-white text-black font-medium' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    Original
+                  </button>
+                  <button
+                    onClick={() => setIsGeorgian(true)}
+                    className={`px-4 py-1.5 rounded-md transition-all text-xs ${isGeorgian ? 'bg-purple-600 text-white font-medium' : 'text-gray-400 hover:text-white'}`}
+                  >
+                    ქართული (AI)
+                  </button>
+                </div>
+
+                <p className="text-xs text-gray-600">Powered by Edge TTS</p>
+              </div>
             </motion.div>
           ) : (
             <div className="flex-1 flex items-center justify-center">
