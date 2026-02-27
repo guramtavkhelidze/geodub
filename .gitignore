@@ -39,3 +39,15 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# generated audio files
+/public/temp/
+
+# test files
+test_*.mp3
+test_*.pcm
+test_*.js
+test_out.txt
+voice_check.txt
+voice_check_direct.txt
+langs_check.txt
