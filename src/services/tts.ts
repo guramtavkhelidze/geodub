@@ -1,4 +1,4 @@
-import { generateSpeechEdge } from './edge-tts';
+import { createTTSInstance, generateSpeechEdgeWithInstance } from './edge-tts';
 import fs from 'fs';
 import path from 'path';
 import ffmpeg from 'fluent-ffmpeg';
@@ -19,6 +19,9 @@ export async function generateGeorgianAudio(
 ) {
     const segmentFiles: string[] = [];
 
+    // Create one TTS instance and reuse it for all segments (avoids repeated WebSocket reconnects)
+    const tts = await createTTSInstance();
+
     for (let i = 0; i < segments.length; i++) {
         const segment = segments[i];
         if (!segment.text || segment.text.trim() === '') continue;
@@ -32,23 +35,24 @@ export async function generateGeorgianAudio(
         try {
             console.log(`Generating TTS for segment ${i}/${segments.length}: "${cleanText.substring(0, 30)}..."`);
 
-            // Report progress
             if (onProgress) {
                 onProgress(i + 1, segments.length, cleanText, 'tts');
             }
 
-            await generateSpeechEdge(cleanText, fileName);
+            await generateSpeechEdgeWithInstance(tts, cleanText, fileName);
             segmentFiles.push(fileName);
 
-            // Small delay between requests
-            await new Promise(r => setTimeout(r, 800));
+            await new Promise(r => setTimeout(r, 300));
         } catch (error: any) {
             console.error(`Error in TTS segment ${i}:`, error?.message || String(error));
-            // Retry once after a longer delay
-            await new Promise(r => setTimeout(r, 2000));
+            // On failure, recreate the TTS instance and retry once
+            await new Promise(r => setTimeout(r, 3000));
             try {
-                await generateSpeechEdge(cleanText, fileName);
+                const freshTts = await createTTSInstance();
+                await generateSpeechEdgeWithInstance(freshTts, cleanText, fileName);
                 segmentFiles.push(fileName);
+                // Replace the broken instance with the fresh one
+                Object.assign(tts, freshTts);
             } catch (retryError: any) {
                 console.error(`Retry failed for segment ${i}:`, retryError?.message || String(retryError));
             }
