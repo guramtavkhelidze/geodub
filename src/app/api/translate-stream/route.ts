@@ -1,7 +1,8 @@
 import { NextRequest } from 'next/server';
 import { downloadYouTubeAudio, getVideoMetadata, getYouTubeTranscript } from '@/services/youtube';
 import { translateTranscript, translateAudio } from '@/services/gemini';
-import { generateGeorgianAudio, stitchAudioWithTiming } from '@/services/tts';
+import { generateGeorgianAudio, stitchAudioWithTiming, CancellationError } from '@/services/tts';
+import { isCancelled, clearJob } from '@/services/cancellation';
 import path from 'path';
 import fs from 'fs';
 
@@ -19,19 +20,29 @@ export async function POST(req: NextRequest) {
 
     const stream = new ReadableStream({
         async start(controller) {
+            const jobId = crypto.randomUUID();
             const sendProgress = (data: any) => {
                 controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
             };
+            const checkCancelled = () => isCancelled(jobId);
 
             try {
                 const outputDir = path.join(process.cwd(), 'public', 'temp');
                 if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+
+                // Send jobId so client can cancel
+                sendProgress({ stage: 'init', jobId });
 
                 // Stage 1: Download & Get Transcript
                 sendProgress({ stage: 'download', message: 'ვიდეოს ინფორმაციის ჩამოტვირთვა...' });
                 const metadata = await getVideoMetadata(url);
                 const { audioPath, videoId } = await downloadYouTubeAudio(url, outputDir);
                 const duration = metadata.duration;
+
+                // Send videoId so client can request cleanup on cancel
+                sendProgress({ stage: 'download', message: 'ჩამოტვირთვა დასრულდა...', videoId });
+
+                if (checkCancelled()) throw new CancellationError();
 
                 // Try to get YouTube transcript with precise timestamps
                 let translationSegments;
@@ -45,6 +56,8 @@ export async function POST(req: NextRequest) {
                         message: `მოიძებნა ${transcript.length} სეგმენტი სუბტიტრებიდან`
                     });
 
+                    if (checkCancelled()) throw new CancellationError();
+
                     // Stage 2: Translate text (using transcript timestamps)
                     sendProgress({ stage: 'translate', message: 'თარგმანის გენერაცია Gemini-ით...' });
                     translationSegments = await translateTranscript(transcript);
@@ -55,6 +68,7 @@ export async function POST(req: NextRequest) {
                         total: translationSegments.length
                     });
                 } catch (transcriptError: any) {
+                    if (transcriptError instanceof CancellationError) throw transcriptError;
                     // Fallback to audio-based transcription if no subtitles available
                     console.log('No subtitles available, falling back to audio transcription:', transcriptError.message);
                     sendProgress({ stage: 'translate', message: 'სუბტიტრები ვერ მოიძებნა, აუდიოდან ტრანსკრიფცია...' });
@@ -65,6 +79,8 @@ export async function POST(req: NextRequest) {
                         total: translationSegments.length
                     });
                 }
+
+                if (checkCancelled()) throw new CancellationError();
 
                 // Stage 3: TTS
                 const segmentFiles = await generateGeorgianAudio(
@@ -79,7 +95,8 @@ export async function POST(req: NextRequest) {
                             text: text.substring(0, 50) + (text.length > 50 ? '...' : ''),
                             percent: Math.round((current / total) * 100)
                         });
-                    }
+                    },
+                    checkCancelled
                 );
 
                 // Stage 4: Stitch
@@ -132,9 +149,14 @@ export async function POST(req: NextRequest) {
                 });
 
             } catch (error: any) {
-                console.error('Translation error:', error);
-                sendProgress({ stage: 'error', error: error.message || 'დაფიქსირდა შეცდომა' });
+                if (error instanceof CancellationError) {
+                    sendProgress({ stage: 'cancelled' });
+                } else {
+                    console.error('Translation error:', error);
+                    sendProgress({ stage: 'error', error: error.message || 'დაფიქსირდა შეცდომა' });
+                }
             } finally {
+                clearJob(jobId);
                 controller.close();
             }
         }

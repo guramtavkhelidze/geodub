@@ -11,15 +11,22 @@ ffmpeg.setFfprobePath(FFPROBE_PATH);
 
 type ProgressCallback = (current: number, total: number, text: string, stage: string) => void;
 
+export class CancellationError extends Error {
+    constructor() { super('Cancelled'); this.name = 'CancellationError'; }
+}
+
 export async function generateGeorgianAudio(
     segments: { start: number, end: number, text: string }[],
     outputDir: string,
     videoId: string,
-    onProgress?: ProgressCallback
+    onProgress?: ProgressCallback,
+    isCancelledFn?: () => boolean
 ) {
     const segmentFiles: string[] = [];
 
     for (let i = 0; i < segments.length; i++) {
+        if (isCancelledFn?.()) throw new CancellationError();
+
         const segment = segments[i];
         if (!segment.text || segment.text.trim() === '') continue;
 
@@ -234,78 +241,196 @@ export async function stitchAudioWithTiming(
         console.log(`  Segment ${i}: starts at ${seg.exactStart.toFixed(2)}s, duration ${seg.audioDuration.toFixed(2)}s`);
     }
 
-    // Build filter complex - use exact timestamps
-    let filters = [];
-
-    for (let i = 0; i < adjustedSegments.length; i++) {
-        // Use exactStart for precise placement at transcript timestamps
-        const delayMs = Math.floor(adjustedSegments[i].exactStart * 1000);
-        filters.push(`[${i}]adelay=${delayMs}|${delayMs}[a${i}]`);
-    }
-
-    const mixInputs = adjustedSegments.map((_, i) => `[a${i}]`).join('');
-    // normalize=0 prevents amix from dividing volume by number of inputs
-    // weights sets equal weight for all inputs
-    const weights = adjustedSegments.map(() => '1').join(' ');
-    const filterComplex = filters.join(';') + `;${mixInputs}amix=inputs=${adjustedSegments.length}:duration=longest:dropout_transition=0:normalize=0:weights=${weights}[out]`;
-
-    // Write filter to a temp file to avoid Windows command line length limits
-    const filterScriptPath = outputPath.replace('.mp3', '_filter.txt');
-    fs.writeFileSync(filterScriptPath, filterComplex);
-
-    // Build arguments array - using spawnSync with args array bypasses Windows cmd line limit
-    const args: string[] = [];
-    for (const segment of adjustedSegments) {
-        args.push('-i', segment.audioPath);
-    }
-    args.push('-filter_complex_script', filterScriptPath);
-    args.push('-map', '[out]');
-    args.push('-t', String(totalDuration));
-    args.push('-y', outputPath);
-
     console.log('Running ffmpeg stitch command...');
     console.log(`Total segments: ${adjustedSegments.length}, Total duration: ${totalDuration}s`);
 
-    try {
+    function runFfmpeg(args: string[]): void {
         const result = spawnSync(FFMPEG_PATH, args, {
             stdio: 'pipe',
             maxBuffer: 50 * 1024 * 1024,
-            windowsVerbatimArguments: true
+            windowsVerbatimArguments: true,
+            timeout: 10 * 60 * 1000, // 10 minute hard limit per ffmpeg call
         });
 
+        if (result.error) {
+            throw new Error(`ffmpeg failed to spawn: ${result.error.message}`);
+        }
         if (result.status !== 0) {
-            const stderr = result.stderr?.toString() || 'Unknown error';
-            throw new Error(`ffmpeg exited with code ${result.status}: ${stderr}`);
+            const signal = result.signal ? ` (signal: ${result.signal})` : '';
+            const stderr = result.stderr?.toString().trim() || 'no stderr output';
+            throw new Error(`ffmpeg exited with code ${result.status}${signal}: ${stderr}`);
+        }
+    }
+
+    // Mix segments in chunks to avoid amix hitting memory/filter-graph limits with 100s of inputs.
+    // Each chunk mixes its segments at their RELATIVE timestamps (offset from chunk start),
+    // producing a short output covering only that chunk's time range.
+    // A final pass stitches chunk files together using silence-padded concat.
+    const CHUNK_SIZE = 50;
+    const chunkPaths: string[] = [];
+    const filterScriptPaths: string[] = [];
+    const totalChunks = Math.ceil(adjustedSegments.length / CHUNK_SIZE);
+
+    try {
+        for (let chunkStart = 0; chunkStart < adjustedSegments.length; chunkStart += CHUNK_SIZE) {
+            const chunk = adjustedSegments.slice(chunkStart, chunkStart + CHUNK_SIZE);
+            const chunkIndex = Math.floor(chunkStart / CHUNK_SIZE);
+            const chunkPath = outputPath.replace('.mp3', `_chunk${chunkIndex}.mp3`);
+            chunkPaths.push(chunkPath);
+
+            // Use relative timestamps: subtract the chunk's start time so the output
+            // only spans the chunk's time range rather than the full video duration.
+            const chunkOffsetMs = Math.floor(chunk[0].exactStart * 1000);
+
+            const filters: string[] = [];
+            for (let i = 0; i < chunk.length; i++) {
+                const relativeDelayMs = Math.floor(chunk[i].exactStart * 1000) - chunkOffsetMs;
+                filters.push(`[${i}]adelay=${relativeDelayMs}|${relativeDelayMs}[a${i}]`);
+            }
+            const mixInputs = chunk.map((_, i) => `[a${i}]`).join('');
+            const weights = chunk.map(() => '1').join(' ');
+            const filterComplex = filters.join(';') + `;${mixInputs}amix=inputs=${chunk.length}:duration=longest:dropout_transition=0:normalize=0:weights=${weights}[out]`;
+
+            const filterScriptPath = outputPath.replace('.mp3', `_filter_chunk${chunkIndex}.txt`);
+            filterScriptPaths.push(filterScriptPath);
+            fs.writeFileSync(filterScriptPath, filterComplex);
+
+            const args: string[] = [];
+            for (const seg of chunk) args.push('-i', seg.audioPath);
+            args.push('-filter_complex_script', filterScriptPath);
+            args.push('-map', '[out]');
+            // No -t here: let each chunk end naturally at its last segment's end.
+            // This keeps chunk files small (only their portion of the timeline).
+            args.push('-y', chunkPath);
+
+            console.log(`Mixing chunk ${chunkIndex + 1}/${totalChunks} (${chunk.length} segs, offset ${(chunkOffsetMs/1000).toFixed(1)}s)...`);
+            if (onProgress) {
+                onProgress(chunkIndex, totalChunks, `სეგმენტების დამუშავება: ${chunkIndex + 1}/${totalChunks}`, 'stitch');
+            }
+            runFfmpeg(args);
+        }
+
+        // Final pass: concat chunk files with silence padding between them.
+        // Each chunk covers [chunkOffsetSec .. chunkOffsetSec + chunkDuration].
+        // We pad gaps with silence using lavfi aevalsrc so chunks sit at their correct positions.
+        if (onProgress) {
+            onProgress(totalChunks, totalChunks, 'ფინალური გაერთიანება...', 'stitch');
+        }
+
+        let finalFilterScript: string | null = null;
+        if (chunkPaths.length === 1) {
+            const SAMPLE_RATE = 24000;
+            const firstSegStart = adjustedSegments[0].exactStart;
+            if (firstSegStart > 0.02) {
+                // Prepend initial silence so the audio aligns with the video timeline
+                const silencePath = outputPath.replace('.mp3', '_silence_0.mp3');
+                const concatListPath = outputPath.replace('.mp3', '_concat_list.txt');
+                finalFilterScript = concatListPath;
+                runFfmpeg([
+                    '-f', 'lavfi',
+                    '-i', `aevalsrc=0:c=mono:s=${SAMPLE_RATE}:d=${firstSegStart.toFixed(3)}`,
+                    '-y', silencePath
+                ]);
+                fs.writeFileSync(concatListPath, [
+                    `file '${silencePath.replace(/\\/g, '/')}'`,
+                    `file '${chunkPaths[0].replace(/\\/g, '/')}'`,
+                ].join('\n'));
+                runFfmpeg([
+                    '-f', 'concat', '-safe', '0',
+                    '-i', concatListPath,
+                    '-c:a', 'libmp3lame', '-q:a', '2',
+                    '-y', outputPath
+                ]);
+                try { fs.unlinkSync(silencePath); } catch {}
+            } else {
+                fs.renameSync(chunkPaths[0], outputPath);
+            }
+        } else {
+            // Build a concat list that interleaves silence + chunk audio.
+            // We use the concat demuxer (file list) for simplicity.
+            // Sample rate from edge-tts is 24000 Hz, mono.
+            const SAMPLE_RATE = 24000;
+            const concatListPath = outputPath.replace('.mp3', '_concat_list.txt');
+            finalFilterScript = concatListPath;
+
+            let concatLines: string[] = [];
+            let cursorSec = 0;
+
+            for (let ci = 0; ci < chunkPaths.length; ci++) {
+                const chunkOffsetSec = adjustedSegments[ci * CHUNK_SIZE].exactStart;
+                const gap = chunkOffsetSec - cursorSec;
+
+                if (gap > 0.02) {
+                    // Generate a silence file for this gap
+                    const silencePath = outputPath.replace('.mp3', `_silence_${ci}.mp3`);
+                    const silenceArgs = [
+                        '-f', 'lavfi',
+                        '-i', `aevalsrc=0:c=mono:s=${SAMPLE_RATE}:d=${gap.toFixed(3)}`,
+                        '-y', silencePath
+                    ];
+                    runFfmpeg(silenceArgs);
+                    concatLines.push(`file '${silencePath.replace(/\\/g, '/')}'`);
+                }
+
+                concatLines.push(`file '${chunkPaths[ci].replace(/\\/g, '/')}'`);
+
+                // Advance cursor by chunk's actual duration
+                const chunkDuration = await getAudioDuration(chunkPaths[ci]);
+                cursorSec = chunkOffsetSec + chunkDuration;
+            }
+
+            // Pad tail if needed
+            const tailGap = totalDuration - cursorSec;
+            if (tailGap > 0.02) {
+                const silencePath = outputPath.replace('.mp3', '_silence_tail.mp3');
+                runFfmpeg([
+                    '-f', 'lavfi',
+                    '-i', `aevalsrc=0:c=mono:s=${SAMPLE_RATE}:d=${tailGap.toFixed(3)}`,
+                    '-y', silencePath
+                ]);
+                concatLines.push(`file '${silencePath.replace(/\\/g, '/')}'`);
+            }
+
+            fs.writeFileSync(concatListPath, concatLines.join('\n'));
+
+            console.log(`Concatenating ${chunkPaths.length} chunks via concat demuxer...`);
+            runFfmpeg([
+                '-f', 'concat',
+                '-safe', '0',
+                '-i', concatListPath,
+                '-c:a', 'libmp3lame',
+                '-q:a', '2',
+                '-y', outputPath
+            ]);
+
+            // Clean up silence files
+            for (let ci = 0; ci <= chunkPaths.length; ci++) {
+                const sp = outputPath.replace('.mp3', `_silence_${ci}.mp3`);
+                try { fs.unlinkSync(sp); } catch {}
+            }
+            try { fs.unlinkSync(outputPath.replace('.mp3', '_silence_tail.mp3')); } catch {}
         }
 
         console.log('Audio stitching complete.');
 
-        // Cleanup temp files - only delete adjusted versions, not originals
-        fs.unlinkSync(filterScriptPath);
+        // Cleanup
+        for (const p of filterScriptPaths) try { fs.unlinkSync(p); } catch {}
+        if (finalFilterScript) try { fs.unlinkSync(finalFilterScript); } catch {} // concat list
+        for (const cp of chunkPaths) try { fs.unlinkSync(cp); } catch {}
         for (const segment of adjustedSegments) {
-            if (segment.wasAdjusted) {
-                try { fs.unlinkSync(segment.audioPath); } catch {}
-            }
+            if (segment.wasAdjusted) try { fs.unlinkSync(segment.audioPath); } catch {}
         }
 
-        // Normalize audio volume
-        if (onProgress) {
-            onProgress(0, 1, 'აუდიოს ნორმალიზაცია...', 'stitch');
-        }
-
+        if (onProgress) onProgress(0, 1, 'აუდიოს ნორმალიზაცია...', 'stitch');
         await normalizeAudio(outputPath);
+        if (onProgress) onProgress(1, 1, 'დასრულდა!', 'stitch');
 
-        if (onProgress) {
-            onProgress(1, 1, 'დასრულდა!', 'stitch');
-        }
     } catch (error: any) {
         console.error('ffmpeg stitch error:', error.message);
-        // Cleanup temp files on error too - only adjusted versions
-        try { fs.unlinkSync(filterScriptPath); } catch {}
+        for (const p of filterScriptPaths) try { fs.unlinkSync(p); } catch {}
+        for (const cp of chunkPaths) try { fs.unlinkSync(cp); } catch {}
         for (const segment of adjustedSegments) {
-            if (segment.wasAdjusted) {
-                try { fs.unlinkSync(segment.audioPath); } catch {}
-            }
+            if (segment.wasAdjusted) try { fs.unlinkSync(segment.audioPath); } catch {}
         }
         throw error;
     }
