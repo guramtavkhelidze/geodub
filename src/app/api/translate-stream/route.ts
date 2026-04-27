@@ -60,7 +60,15 @@ export async function POST(req: NextRequest) {
 
                     // Stage 2: Translate text (using transcript timestamps)
                     sendProgress({ stage: 'translate', message: 'თარგმანის გენერაცია Gemini-ით...' });
-                    translationSegments = await translateTranscript(transcript);
+                    translationSegments = await translateTranscript(transcript, (current, total) => {
+                        sendProgress({
+                            stage: 'translate',
+                            message: `თარგმანი: batch ${current}/${total}`,
+                            current,
+                            total,
+                            percent: Math.round((current / total) * 100),
+                        });
+                    });
                     usingTranscript = true;
                     sendProgress({
                         stage: 'translate',

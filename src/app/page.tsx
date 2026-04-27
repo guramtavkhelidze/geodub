@@ -98,9 +98,14 @@ export default function GeoDub() {
     }
   };
 
-  const loadPlaylists = () => {
-    const saved = localStorage.getItem('geodub_playlists');
-    if (saved) { try { setPlaylists(JSON.parse(saved)); } catch {} }
+  const loadPlaylists = async () => {
+    try {
+      const res = await fetch('/api/playlists');
+      const data = await res.json();
+      if (data.playlists) setPlaylists(data.playlists);
+    } catch (err) {
+      console.error('Failed to load playlists:', err);
+    }
   };
 
   const loadWatchProgress = () => {
@@ -110,7 +115,11 @@ export default function GeoDub() {
 
   const savePlaylists = (updated: Playlist[]) => {
     setPlaylists(updated);
-    localStorage.setItem('geodub_playlists', JSON.stringify(updated));
+    fetch('/api/playlists', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ playlists: updated }),
+    }).catch(console.error);
   };
 
   const saveWatchProgress = (videoId: string, fraction: number) => {
@@ -552,7 +561,7 @@ export default function GeoDub() {
   // ── JSX ───────────────────────────────────────────────────────────────────
 
   return (
-    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-purple-500/30 flex flex-col">
+    <div className="h-screen bg-[#050505] text-white font-sans selection:bg-purple-500/30 flex flex-col overflow-hidden">
       {/* Background Gradients */}
       <div className="fixed inset-0 overflow-hidden -z-10">
         <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] bg-purple-900/20 blur-[120px] rounded-full" />
